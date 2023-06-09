@@ -1,0 +1,10 @@
+version: '3.4'
+
+services:
+  masivocmi:    
+    image: masivocmi
+    build:
+      context: .
+      dockerfile: ./Dockerfile   
+    ports:
+      - 8071:8071

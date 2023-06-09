@@ -19,6 +19,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 
+
 import gob.mdmq.mdmq_cmi_masivo.model.datos;
 import gob.mdmq.mdmq_cmi_masivo.service.datosService;
 
@@ -86,7 +87,7 @@ public class datosController {
 
             int batchSize = 1000;
             int currentBatch = 0;
-            List<Map<String, Object>> datosFinales = new ArrayList<Map<String, Object>>();
+            List<JsonObject> datosFinales = new ArrayList<JsonObject>();
             while (rows.hasNext()) {
                 if (currentBatch == batchSize) {
                     processBatch(currentBatch, datosFinales);
@@ -96,19 +97,19 @@ public class datosController {
                 Iterator<Cell> cells = row.cellIterator();
 
                 int i = 0;
-                Map<String, Object> objeto = new HashMap<>();
-                Map<String, Object> objeto2 = new HashMap<>();
+                //Crear objeto Json
+                JsonObject jsonObject = new JsonObject();
                 
                 
                 while (cells.hasNext()) {
                     Cell cell = cells.next();
-                    objeto.put(datos1.get(i), cell);
-
+                    jsonObject.addProperty(datos1.get(i), cell.toString());
+                    System.out.println("jsonObject: " + jsonObject);
                     i++;
                 }
 
                 //objeto2.put("datos", objeto);
-                datosFinales.add(objeto);
+                datosFinales.add(jsonObject);
 
                 currentBatch++;
             }
@@ -125,44 +126,13 @@ public class datosController {
     }
 
     @Async
-    private void processBatch(int currentBatch, List<Map<String, Object>> datosFinales) {
+    private void processBatch(int currentBatch, List<JsonObject> datosFinales) {
         System.out.println("datosFinales " + datosFinales);
         try {
-            /*
-             * var v = datosFinales.iterator().next();
-             * 
-             * Map<String, Object> obj = new HashMap<>();
-             * obj = (Map<String, Object>) datosFinales.get(0);
-             * var y= obj.get("datos").toString().substring(0);
-             * 
-             * Gson gson = new GsonBuilder().setPrettyPrinting().create();
-             * 
-             * String rpt1 = gson.toJson(y.substring(0));
-             * 
-             * 
-             * ObjectMapper Obj1 = new ObjectMapper();
-             * String rpt = Obj1.writeValueAsString(rpt1);
-             * 
-             * 
-             * sendMessage(rpt, "temaBroker-2");
-             */
 
-            for (Object datosFinal : datosFinales) {
+            for (JsonObject datosFinal : datosFinales) {
                 try {
-
-                    /* var t = obj.get(datosFinales.get(0)); */
-
-
-
-                    //Map<String, Object> obj = new HashMap<>();
-                    //obj = (Map<String, Object>) datosFinal;
-                    Gson gson = new Gson();
-                    String objetoAsJson = gson.toJson(datosFinal);
-                    System.out.println(objetoAsJson);
-                    // ObjectMapper Obj = new ObjectMapper();
-                    // String jsonStr = Obj.writeValueAsString(datosFinal);
-                    // System.out.println(jsonStr);
-                    sendMessage(objetoAsJson, "temaBroker-2");
+                    sendMessage(datosFinal.toString(), "temaBroker-2");
                 } catch (Exception e) {
                     System.out.println("Error al enviar el mensaje");
                 }
