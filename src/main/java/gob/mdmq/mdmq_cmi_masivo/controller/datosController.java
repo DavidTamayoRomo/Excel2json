@@ -23,6 +23,7 @@ import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
 
+import gob.mdmq.mdmq_cmi_masivo.model.File;
 import gob.mdmq.mdmq_cmi_masivo.model.datos;
 import gob.mdmq.mdmq_cmi_masivo.service.datosService;
 
@@ -33,11 +34,13 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -134,60 +137,108 @@ public class datosController {
         }
     }
 
-    @PostMapping("/uploadcsv")
-    public void uploadFileCSV(@RequestParam("file") MultipartFile file) {
+    @PostMapping(value = "/uploadcsv")
+    public void uploadFileCSV(@RequestParam("file") MultipartFile file, @RequestParam Boolean coma) {
         try {
             InputStream in = file.getInputStream();
             InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+            if (coma) {
+                CSVParser csvParser = new CSVParserBuilder()
+                        .withSeparator(',').withIgnoreQuotations(false).build();
+                CSVReader csvReader = new CSVReaderBuilder(reader)
+                        // .withSkipLines(1) // Omitir la primera línea si es un encabezado
+                        .withCSVParser(csvParser)
+                        .build();
 
-            /* CSVParser csvParser = new CSVParserBuilder()
-                .withSeparator(',').withIgnoreQuotations(false).build(); */ // Delimitador de coma
-            CSVParser csvParser = new CSVParserBuilder()
-                .withSeparator(';').withIgnoreQuotations(false).build(); // Delimitador de punto y coma
+                // CSVReader csvReader = new CSVReader(reader);
 
-            CSVReader csvReader = new CSVReaderBuilder(reader)
-                //.withSkipLines(1) // Omitir la primera línea si es un encabezado
-                .withCSVParser(csvParser)
-                .build();
+                List<String> headers = null;
+                List<JsonObject> datosFinales = new ArrayList<>();
 
-            //CSVReader csvReader = new CSVReader(reader);
+                int batchSize = 1000;
+                int currentBatch = 0;
 
-            List<String> headers = null;
-            List<JsonObject> datosFinales = new ArrayList<>();
-
-            int batchSize = 1000;
-            int currentBatch = 0;
-
-            String[] nextLine;
-            while ((nextLine = csvReader.readNext()) != null) {
-                if (currentBatch == batchSize) {
-                    processBatch(currentBatch, datosFinales);
-                    currentBatch = 0;
-                    datosFinales = new ArrayList<>();
-                }
-
-                if (headers == null) {
-                    headers = Arrays.asList(nextLine);
-                } else {
-                    JsonObject jsonObject = new JsonObject();
-                    for (int i = 0; i < headers.size(); i++) {
-                        String header = headers.get(i);
-                        String value = nextLine[i];
-                        jsonObject.addProperty(header, value);
-                        System.out.println("jsonObject: " + jsonObject);
+                String[] nextLine;
+                while ((nextLine = csvReader.readNext()) != null) {
+                    if (currentBatch == batchSize) {
+                        processBatch(currentBatch, datosFinales);
+                        currentBatch = 0;
+                        datosFinales = new ArrayList<>();
                     }
-                    datosFinales.add(jsonObject);
+
+                    if (headers == null) {
+                        headers = Arrays.asList(nextLine);
+                    } else {
+                        JsonObject jsonObject = new JsonObject();
+                        for (int i = 0; i < headers.size(); i++) {
+                            String header = headers.get(i);
+                            String value = nextLine[i];
+                            jsonObject.addProperty(header, value);
+                            System.out.println("jsonObject: " + jsonObject);
+                        }
+                        datosFinales.add(jsonObject);
+                    }
+
+                    currentBatch++;
                 }
 
-                currentBatch++;
-            }
+                if (currentBatch > 0) {
+                    processBatch(currentBatch, datosFinales);
+                }
 
-            if (currentBatch > 0) {
-                processBatch(currentBatch, datosFinales);
-            }
+                csvReader.close();
+                reader.close();
 
-            csvReader.close();
-            reader.close();
+            } else {
+                CSVParser csvParser = new CSVParserBuilder()
+                        .withSeparator(';').withIgnoreQuotations(false).build(); // Delimitador de punto y coma
+                CSVReader csvReader = new CSVReaderBuilder(reader)
+                        // .withSkipLines(1) // Omitir la primera línea si es un encabezado
+                        .withCSVParser(csvParser)
+                        .build();
+
+                // CSVReader csvReader = new CSVReader(reader);
+
+                List<String> headers = null;
+                List<JsonObject> datosFinales = new ArrayList<>();
+
+                int batchSize = 1000;
+                int currentBatch = 0;
+
+                String[] nextLine;
+                while ((nextLine = csvReader.readNext()) != null) {
+                    if (currentBatch == batchSize) {
+                        processBatch(currentBatch, datosFinales);
+                        currentBatch = 0;
+                        datosFinales = new ArrayList<>();
+                    }
+
+                    if (headers == null) {
+                        headers = Arrays.asList(nextLine);
+                    } else {
+                        JsonObject jsonObject = new JsonObject();
+                        for (int i = 0; i < headers.size(); i++) {
+                            String header = headers.get(i);
+                            String value = nextLine[i];
+                            jsonObject.addProperty(header, value);
+                            System.out.println("jsonObject: " + jsonObject);
+                        }
+                        datosFinales.add(jsonObject);
+                    }
+
+                    currentBatch++;
+                }
+
+                if (currentBatch > 0) {
+                    processBatch(currentBatch, datosFinales);
+                }
+
+                csvReader.close();
+                reader.close();
+
+            }
+            /* */
+            // Delimitador de coma
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -216,6 +267,118 @@ public class datosController {
     public String sendMessage(String datos, String topic) throws JsonProcessingException {
         kafkaTemplate.send(topic, datos);
         return "message sent";
+    }
+
+    @PostMapping(value = "/uploadcsvBase64")
+    public void uploadFileCSVBase64(@RequestBody File file, @RequestParam Boolean coma) {
+        try {
+            
+            String base64File = file.getFile();
+            byte[] decodedBytes = Base64.getDecoder().decode(base64File);
+            InputStream in = new ByteArrayInputStream(decodedBytes);
+            InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+
+            if (coma) {
+                CSVParser csvParser = new CSVParserBuilder()
+                        .withSeparator(',').withIgnoreQuotations(false).build();
+                CSVReader csvReader = new CSVReaderBuilder(reader)
+                        // .withSkipLines(1) // Omitir la primera línea si es un encabezado
+                        .withCSVParser(csvParser)
+                        .build();
+
+                // CSVReader csvReader = new CSVReader(reader);
+
+                List<String> headers = null;
+                List<JsonObject> datosFinales = new ArrayList<>();
+
+                int batchSize = 1000;
+                int currentBatch = 0;
+
+                String[] nextLine;
+                while ((nextLine = csvReader.readNext()) != null) {
+                    if (currentBatch == batchSize) {
+                        processBatch(currentBatch, datosFinales);
+                        currentBatch = 0;
+                        datosFinales = new ArrayList<>();
+                    }
+
+                    if (headers == null) {
+                        headers = Arrays.asList(nextLine);
+                    } else {
+                        JsonObject jsonObject = new JsonObject();
+                        for (int i = 0; i < headers.size(); i++) {
+                            String header = headers.get(i);
+                            String value = nextLine[i];
+                            jsonObject.addProperty(header, value);
+                            System.out.println("jsonObject: " + jsonObject);
+                        }
+                        datosFinales.add(jsonObject);
+                    }
+
+                    currentBatch++;
+                }
+
+                if (currentBatch > 0) {
+                    processBatch(currentBatch, datosFinales);
+                }
+
+                csvReader.close();
+                reader.close();
+
+            } else {
+                CSVParser csvParser = new CSVParserBuilder()
+                        .withSeparator(';').withIgnoreQuotations(false).build(); // Delimitador de punto y coma
+                CSVReader csvReader = new CSVReaderBuilder(reader)
+                        // .withSkipLines(1) // Omitir la primera línea si es un encabezado
+                        .withCSVParser(csvParser)
+                        .build();
+
+                // CSVReader csvReader = new CSVReader(reader);
+
+                List<String> headers = null;
+                List<JsonObject> datosFinales = new ArrayList<>();
+
+                int batchSize = 1000;
+                int currentBatch = 0;
+
+                String[] nextLine;
+                while ((nextLine = csvReader.readNext()) != null) {
+                    if (currentBatch == batchSize) {
+                        processBatch(currentBatch, datosFinales);
+                        currentBatch = 0;
+                        datosFinales = new ArrayList<>();
+                    }
+
+                    if (headers == null) {
+                        headers = Arrays.asList(nextLine);
+                    } else {
+                        JsonObject jsonObject = new JsonObject();
+                        for (int i = 0; i < headers.size(); i++) {
+                            String header = headers.get(i);
+                            String value = nextLine[i];
+                            jsonObject.addProperty(header, value);
+                            System.out.println("jsonObject: " + jsonObject);
+                        }
+                        datosFinales.add(jsonObject);
+                    }
+
+                    currentBatch++;
+                }
+
+                if (currentBatch > 0) {
+                    processBatch(currentBatch, datosFinales);
+                }
+
+                csvReader.close();
+                reader.close();
+
+            }
+            /* */
+            // Delimitador de coma
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 }
