@@ -1,6 +1,7 @@
 package gob.mdmq.mdmq_cmi_masivo.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,6 +29,7 @@ import gob.mdmq.mdmq_cmi_masivo.model.datos;
 import gob.mdmq.mdmq_cmi_masivo.service.datosService;
 
 import org.apache.poi.ss.usermodel.*;
+import org.bson.Document;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.poifs.filesystem.OfficeXmlFileException;
 import org.springframework.web.bind.annotation.*;
@@ -45,6 +47,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/masivo")
@@ -54,10 +57,13 @@ public class datosController {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
 
+    private final MongoTemplate mongoTemplate;
+
     @Autowired
-    public datosController(KafkaTemplate<String, String> kafkaTemplate, datosService datosOrderService) {
+    public datosController(KafkaTemplate<String, String> kafkaTemplate, datosService datosOrderService,MongoTemplate mongoTemplate) {
         this.kafkaTemplate = kafkaTemplate;
         this.datosOrderService = datosOrderService;
+        this.mongoTemplate = mongoTemplate;
     }
 
     @PostMapping
@@ -247,18 +253,18 @@ public class datosController {
 
     @Async
     private void processBatch(int currentBatch, List<JsonObject> datosFinales) {
-        System.out.println("datosFinales " + datosFinales);
+        //System.out.println("datosFinales " + datosFinales);
         try {
 
             for (JsonObject datosFinal : datosFinales) {
                 try {
                     sendMessage(datosFinal.toString(), "temaBroker-2");
                 } catch (Exception e) {
-                    System.out.println("Error al enviar el mensaje");
+                    //System.out.println("Error al enviar el mensaje");
                 }
 
             }
-            Thread.sleep(1000);
+            //Thread.sleep(1000);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -272,7 +278,7 @@ public class datosController {
     @PostMapping(value = "/uploadcsvBase64")
     public void uploadFileCSVBase64(@RequestBody File file, @RequestParam Boolean coma) {
         try {
-            
+
             String base64File = file.getFile();
             byte[] decodedBytes = Base64.getDecoder().decode(base64File);
             InputStream in = new ByteArrayInputStream(decodedBytes);
@@ -376,6 +382,129 @@ public class datosController {
             /* */
             // Delimitador de coma
 
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @PostMapping(value = "/uploadcsvBase64many")
+    public void uploadFileCSVBase64many(@RequestBody File file, @RequestParam Boolean coma) {
+        try {
+
+            String base64File = file.getFile();
+            byte[] decodedBytes = Base64.getDecoder().decode(base64File);
+            InputStream in = new ByteArrayInputStream(decodedBytes);
+            InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+
+            CSVParser csvParser = new CSVParserBuilder().withSeparator(',').withIgnoreQuotations(false).build();
+
+            try (CSVReader csvReader = new CSVReaderBuilder(reader).withCSVParser(csvParser).build()) {
+
+                List<String> headers = null;
+                List<JsonObject> datosFinales = new ArrayList<>();
+
+                int batchSize = 1000;
+                int currentBatch = 0;
+
+                String[] nextLine;
+                Integer contador = 0;
+                while ((nextLine = csvReader.readNext()) != null) {
+                    
+                    if (currentBatch == batchSize) {
+                        processBatch(currentBatch, datosFinales);
+                        // collection.insertMany(batch);
+                        // batch.clear();
+                        this.mongoTemplate.insertAll(datosFinales);
+                        currentBatch = 0;
+                        datosFinales = new ArrayList<>();
+                        System.out.println("Datos Procesados: " + contador);
+                    }
+
+                    if (headers == null) {
+                        headers = Arrays.asList(nextLine);
+                    } else {
+                        JsonObject jsonObject = new JsonObject();
+                        for (int i = 0; i < headers.size(); i++) {
+                            String header = headers.get(i);
+                            String value = nextLine[i];
+                            jsonObject.addProperty(header, value);
+                            System.out.println("jsonObject: " + jsonObject);
+                        }
+                        datosFinales.add(jsonObject);
+                    }
+
+                    currentBatch++;
+                }
+
+                if (currentBatch > 0) {
+                    processBatch(currentBatch, datosFinales);
+                }
+
+                csvReader.close();
+                reader.close();
+
+            }
+
+            /* */
+            // Delimitador de coma
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    
+
+    @PostMapping("/uploadfileCSV")
+    public void uploadfileCSV(@RequestParam("file") MultipartFile file) {
+        try (
+                InputStream in = file.getInputStream();
+                InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+                CSVReader csvReader = new CSVReaderBuilder(reader)
+                        .withCSVParser(new CSVParserBuilder().withSeparator(';').withIgnoreQuotations(false).build())
+                        .build()
+            ) {
+
+            List<String> headers = null;
+            List<JsonObject> datosFinales = new ArrayList<>();
+
+            int batchSize = 3000;
+            int currentBatch = 0;
+
+            String[] nextLine;
+
+            while ((nextLine = csvReader.readNext()) != null) {
+                if (currentBatch == batchSize) {
+                    //almacenenar en la base de datos
+                    //this.mongoTemplate.insert(datosFinales, "prueba68");
+                    processBatch(currentBatch, datosFinales);
+                    currentBatch = 0;
+                    datosFinales.clear();
+                }
+
+                if (headers == null) {
+                    headers = Arrays.asList(nextLine);
+                } else {
+                    JsonObject jsonObject = new JsonObject();
+                    for (int i = 0; i < headers.size(); i++) {
+                        String header = headers.get(i);
+                        String value = nextLine[i];
+                        jsonObject.addProperty(header, value);
+                    }
+                    datosFinales.add(jsonObject);
+                }
+
+                currentBatch++;
+            }
+
+            if (currentBatch > 0) {
+                processBatch(currentBatch, datosFinales);
+            }
+
+        } catch (OfficeXmlFileException e) {
+            e.printStackTrace();
+            System.out.println("File type mismatch");
         } catch (Exception e) {
             e.printStackTrace();
         }
