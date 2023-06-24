@@ -60,7 +60,8 @@ public class datosController {
     private final MongoTemplate mongoTemplate;
 
     @Autowired
-    public datosController(KafkaTemplate<String, String> kafkaTemplate, datosService datosOrderService,MongoTemplate mongoTemplate) {
+    public datosController(KafkaTemplate<String, String> kafkaTemplate, datosService datosOrderService,
+            MongoTemplate mongoTemplate) {
         this.kafkaTemplate = kafkaTemplate;
         this.datosOrderService = datosOrderService;
         this.mongoTemplate = mongoTemplate;
@@ -253,18 +254,18 @@ public class datosController {
 
     @Async
     private void processBatch(int currentBatch, List<JsonObject> datosFinales) {
-        //System.out.println("datosFinales " + datosFinales);
+        // System.out.println("datosFinales " + datosFinales);
         try {
 
             for (JsonObject datosFinal : datosFinales) {
                 try {
                     sendMessage(datosFinal.toString(), "temaBroker-2");
                 } catch (Exception e) {
-                    //System.out.println("Error al enviar el mensaje");
+                    System.out.println("Error al enviar el mensaje");
                 }
 
             }
-            //Thread.sleep(1000);
+            // Thread.sleep(1000);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -409,7 +410,7 @@ public class datosController {
                 String[] nextLine;
                 Integer contador = 0;
                 while ((nextLine = csvReader.readNext()) != null) {
-                    
+
                     if (currentBatch == batchSize) {
                         processBatch(currentBatch, datosFinales);
                         // collection.insertMany(batch);
@@ -453,9 +454,6 @@ public class datosController {
         }
     }
 
-
-    
-
     @PostMapping("/uploadfileCSV")
     public void uploadfileCSV(@RequestParam("file") MultipartFile file) {
         try (
@@ -463,22 +461,21 @@ public class datosController {
                 InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
                 CSVReader csvReader = new CSVReaderBuilder(reader)
                         .withCSVParser(new CSVParserBuilder().withSeparator(';').withIgnoreQuotations(false).build())
-                        .build()
-            ) {
+                        .build()) {
 
             List<String> headers = null;
-            List<JsonObject> datosFinales = new ArrayList<>();
+            List<Document> datosFinales = new ArrayList<>();
 
-            int batchSize = 3000;
+            int batchSize = 50000;
             int currentBatch = 0;
 
             String[] nextLine;
-
+            Integer contador = 0;
             while ((nextLine = csvReader.readNext()) != null) {
                 if (currentBatch == batchSize) {
-                    //almacenenar en la base de datos
-                    //this.mongoTemplate.insert(datosFinales, "prueba68");
-                    processBatch(currentBatch, datosFinales);
+                    // almacenenar en la base de datos
+                    this.mongoTemplate.insert(datosFinales, "prueba65");
+                    System.out.println("Datos Procesados: " + contador);
                     currentBatch = 0;
                     datosFinales.clear();
                 }
@@ -486,20 +483,27 @@ public class datosController {
                 if (headers == null) {
                     headers = Arrays.asList(nextLine);
                 } else {
-                    JsonObject jsonObject = new JsonObject();
+                    Document document = new Document();
                     for (int i = 0; i < headers.size(); i++) {
                         String header = headers.get(i);
                         String value = nextLine[i];
-                        jsonObject.addProperty(header, value);
+                        document.put(header, value);
                     }
-                    datosFinales.add(jsonObject);
+                    Document outerDocument = new Document();
+                    outerDocument.put("datos", document);
+                    datosFinales.add(outerDocument);
                 }
 
                 currentBatch++;
+                contador++;
             }
 
             if (currentBatch > 0) {
-                processBatch(currentBatch, datosFinales);
+                // processBatch(currentBatch, datosFinales);
+                this.mongoTemplate.insert(datosFinales, "prueba65");
+                System.out.println("Datos Procesados: " + contador);
+                currentBatch = 0;
+                datosFinales.clear();
             }
 
         } catch (OfficeXmlFileException e) {
