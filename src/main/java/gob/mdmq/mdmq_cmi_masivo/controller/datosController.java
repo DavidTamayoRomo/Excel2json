@@ -10,14 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-
-import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
@@ -30,12 +23,8 @@ import gob.mdmq.mdmq_cmi_masivo.service.datosService;
 
 import org.apache.poi.ss.usermodel.*;
 import org.bson.Document;
-import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.poifs.filesystem.OfficeXmlFileException;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -43,11 +32,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/masivo")
@@ -83,7 +69,7 @@ public class datosController {
 
     }
 
-    @PostMapping("/upload")
+    @PostMapping("/upload1")
     public void uploadFile(@RequestParam("file") MultipartFile file) {
         try {
             InputStream in = file.getInputStream();
@@ -144,7 +130,7 @@ public class datosController {
         }
     }
 
-    @PostMapping(value = "/uploadcsv")
+    @PostMapping(value = "/uploadcsv1")
     public void uploadFileCSV(@RequestParam("file") MultipartFile file, @RequestParam Boolean coma) {
         try {
             InputStream in = file.getInputStream();
@@ -276,7 +262,7 @@ public class datosController {
         return "message sent";
     }
 
-    @PostMapping(value = "/uploadcsvBase64")
+    @PostMapping(value = "/uploadcsvBase641")
     public void uploadFileCSVBase64(@RequestBody File file, @RequestParam Boolean coma) {
         try {
 
@@ -388,7 +374,7 @@ public class datosController {
         }
     }
 
-    @PostMapping(value = "/uploadcsvBase64many")
+    @PostMapping(value = "/uploadcsvBase64many1")
     public void uploadFileCSVBase64many(@RequestBody File file, @RequestParam Boolean coma) {
         try {
 
@@ -453,9 +439,9 @@ public class datosController {
             e.printStackTrace();
         }
     }
-
+    //Estos son los que se van a usar
     @PostMapping("/uploadfileCSV")
-    public void uploadfileCSV(@RequestParam("file") MultipartFile file) {
+    public void uploadfileCSV(@RequestParam("file") MultipartFile file, @RequestParam(required = true) String sistema) {
         try (
                 InputStream in = file.getInputStream();
                 InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
@@ -474,7 +460,7 @@ public class datosController {
             while ((nextLine = csvReader.readNext()) != null) {
                 if (currentBatch == batchSize) {
                     // almacenenar en la base de datos
-                    this.mongoTemplate.insert(datosFinales, "prueba65");
+                    this.mongoTemplate.insert(datosFinales, sistema);
                     System.out.println("Datos Procesados: " + contador);
                     currentBatch = 0;
                     datosFinales.clear();
@@ -500,7 +486,70 @@ public class datosController {
 
             if (currentBatch > 0) {
                 // processBatch(currentBatch, datosFinales);
-                this.mongoTemplate.insert(datosFinales, "prueba65");
+                this.mongoTemplate.insert(datosFinales, sistema);
+                System.out.println("Datos Procesados: " + contador);
+                currentBatch = 0;
+                datosFinales.clear();
+            }
+
+        } catch (OfficeXmlFileException e) {
+            e.printStackTrace();
+            System.out.println("File type mismatch");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @PostMapping("/uploadfileCSVBase64")
+    public void uploadfileCSVBase64(@RequestBody File file, @RequestParam(required = true) String sistema) {
+        String base64File = file.getFile();
+        byte[] decodedBytes = Base64.getDecoder().decode(base64File);
+        try (
+                
+                InputStream in = new ByteArrayInputStream(decodedBytes);
+                InputStreamReader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+                CSVReader csvReader = new CSVReaderBuilder(reader)
+                        .withCSVParser(new CSVParserBuilder().withSeparator(';').withIgnoreQuotations(false).build())
+                        .build()) {
+
+            List<String> headers = null;
+            List<Document> datosFinales = new ArrayList<>();
+
+            int batchSize = 50000;
+            int currentBatch = 0;
+
+            String[] nextLine;
+            Integer contador = 0;
+            while ((nextLine = csvReader.readNext()) != null) {
+                if (currentBatch == batchSize) {
+                    // almacenenar en la base de datos
+                    this.mongoTemplate.insert(datosFinales, sistema);
+                    System.out.println("Datos Procesados: " + contador);
+                    currentBatch = 0;
+                    datosFinales.clear();
+                }
+
+                if (headers == null) {
+                    headers = Arrays.asList(nextLine);
+                } else {
+                    Document document = new Document();
+                    for (int i = 0; i < headers.size(); i++) {
+                        String header = headers.get(i);
+                        String value = nextLine[i];
+                        document.put(header, value);
+                    }
+                    Document outerDocument = new Document();
+                    outerDocument.put("datos", document);
+                    datosFinales.add(outerDocument);
+                }
+
+                currentBatch++;
+                contador++;
+            }
+
+            if (currentBatch > 0) {
+                // processBatch(currentBatch, datosFinales);
+                this.mongoTemplate.insert(datosFinales, sistema);
                 System.out.println("Datos Procesados: " + contador);
                 currentBatch = 0;
                 datosFinales.clear();
